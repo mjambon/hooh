@@ -1,0 +1,7 @@
+This is a tool for making tar.gz archives for each project under
+version control.
+
+The input is a list of pairs (package name, URL).
+A tarball is created for each tag within each repository.
+Only tags starting with a 'v' and a digit are considered; the version 
+ID is everything that follows after the 'v'.

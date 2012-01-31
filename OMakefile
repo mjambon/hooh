@@ -1,0 +1,16 @@
+USE_OCAMLFIND = true
+BYTE_ENABLED = true
+OCAMLDEP_MODULES_ENABLED = false
+
+OCAMLPACKS = unix pcre
+OCAMLFLAGS = -annot -g
+
+FILES = hooh
+
+OCamlProgram(hooh, $(FILES))
+
+.DEFAULT: hooh
+
+.PHONY: clean
+clean:
+        rm -f *.o *.a *.cm* *~ *.annot *.run *.opt hooh
