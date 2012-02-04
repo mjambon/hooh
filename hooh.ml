@@ -100,8 +100,12 @@ let update_package p (pkg, url) =
           run (sprintf "cd %s && git checkout %s" (q pkg) (q tag));
           run (sprintf "mv %s/.git dotgit" (q pkg));
           run (sprintf "tar czf %s-%s.tar.gz %s" (q pkg) (q version) (q pkg));
+          let pkg_dir = p.tgzdir // pkg in
           run (sprintf "mv %s-%s.tar.gz %s"
-                 (q pkg) (q version) (q (p.tgzdir // pkg)));
+                 (q pkg) (q version) (q pkg_dir));
+          let base = sprintf "%s/%s-%s" (q pkg_dir) (q pkg) (q version) in
+          run (sprintf "md5sum -b %s.tar.gz | cut -f1 -d' ' > %s.md5"
+                 base base);
           run (sprintf "mv dotgit %s/.git" (q pkg));
       ) tags;
       run (sprintf "rm -rf %s" (q pkg));
