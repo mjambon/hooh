@@ -2,6 +2,12 @@ open Printf
 
 let ( // ) = Filename.concat
 
+type param = {
+  conf_file : string;
+  tmp_dir : string;
+  dst_dir : string;
+}  
+
 let q s =
   let buf = Buffer.create (2 * String.length s) in
   Buffer.add_char buf '\'';
@@ -44,13 +50,6 @@ let load_config fname =
   let l = load_lines fname in
   List.flatten (List.map parse_line l)
 
-type param = {
-  confname : string;
-  workdir : string;
-  gitdir : string;
-  tgzdir : string;
-}  
-
 let create_dir s =
   if not (Sys.file_exists s) then
     Unix.mkdir s 0o777
@@ -88,25 +87,32 @@ let filter_version_tags l =
   List.flatten l
 
 let update_package p (pkg, url) =
-  cd p.gitdir (
+  let gitdir = p.tmp_dir in
+  let tgzdir = p.dst_dir in
+  cd p.tmp_dir (
     fun () ->
       run (sprintf "git clone %s %s" (q url) (q pkg));
-      run (sprintf "cd %s && git tag -l > %s/tags" (q pkg) (q p.gitdir));
-      let tags = filter_version_tags (load_lines (p.gitdir // "tags")) in
+      run (sprintf "cd %s && git tag -l > %s/tags" (q pkg) (q gitdir));
+      let tags = filter_version_tags (load_lines (gitdir // "tags")) in
       run (sprintf "rm tags");
-      create_dir (p.tgzdir // pkg);
+      let pkg_dir = tgzdir // pkg in
+      create_dir pkg_dir;
       List.iter (
         fun (tag, version) ->
-          run (sprintf "cd %s && git checkout %s" (q pkg) (q tag));
-          run (sprintf "mv %s/.git dotgit" (q pkg));
-          run (sprintf "tar czf %s-%s.tar.gz %s" (q pkg) (q version) (q pkg));
-          let pkg_dir = p.tgzdir // pkg in
-          run (sprintf "mv %s-%s.tar.gz %s"
-                 (q pkg) (q version) (q pkg_dir));
           let base = sprintf "%s/%s-%s" (q pkg_dir) (q pkg) (q version) in
+          run (sprintf
+                 "cd %s && \
+                  git archive --format=tar --prefix=%s-%s/ \
+                  %s \
+                    > %s.tar; \
+                  gzip -nf %s.tar"
+                 (q pkg)
+                 (q pkg) (q version)
+                 (q tag)
+                 base
+                 base);
           run (sprintf "md5sum -b %s.tar.gz | cut -f1 -d' ' > %s.md5"
                  base base);
-          run (sprintf "mv dotgit %s/.git" (q pkg));
       ) tags;
       run (sprintf "rm -rf %s" (q pkg));
   )
@@ -117,19 +123,68 @@ let make_absolute path =
   else
     path
 
+let random_bits =
+  let state = Random.State.make_self_init () in
+  fun () -> Random.State.bits state
+
+let rec make_tmpdir () =
+  let dir = Filename.temp_dir_name // sprintf "hooh-%08x" (random_bits ()) in
+  Unix.mkdir dir 0o700;
+  dir
+
+let with_tmpdir f =
+  let tmp_dir = make_absolute (make_tmpdir ()) in
+  try
+    let x = f tmp_dir in
+    Unix.rmdir tmp_dir;
+    x
+  with e ->
+    (try Unix.rmdir tmp_dir
+     with _ ->
+       eprintf "*** Temporary directory %s needs to be removed manually.\n%!"
+         tmp_dir);
+    raise e
+
 let main () =
-  let workdir = make_absolute "hooh.work" in
-  let param = {
-    confname = make_absolute "hooh.conf";
-    workdir;
-    gitdir = workdir // "git";
-    tgzdir = workdir // "tgz"
-  }
+  let conf = ref "releases.conf" in
+  let dst = ref "releases" in
+  let options = [
+    "-conf", Arg.Set_string conf,
+    "<config file>
+          Configuration file name (default: releases.conf)";
+    
+    "-dst", Arg.Set_string dst,
+    "<destination directory>
+          Destination directory for the .tar.gz and .md5 files
+          (default: releases)";
+  ]
   in
-  create_dir workdir;
-  create_dir param.gitdir;
-  create_dir param.tgzdir;
-  let config = load_config param.confname in
-  List.iter (update_package param) config
+  let err_msg = sprintf "\
+Usage: %s [options]
+Options:"
+    Sys.argv.(0)
+  in
+  let anon_fun s =
+    eprintf "Don't what to do with %s\n%!" s;
+    Arg.usage options err_msg;
+    exit 1
+  in
+  Arg.parse options anon_fun err_msg;
+
+  let conf_file = make_absolute !conf in
+  let dst_dir = make_absolute !dst in
+
+  with_tmpdir (
+    fun tmp_dir ->
+      let param = {
+        conf_file;
+        tmp_dir;
+        dst_dir;
+      }
+      in
+      create_dir param.dst_dir;
+      let config = load_config param.conf_file in
+      List.iter (update_package param) config
+  )
 
 let () = main ()
