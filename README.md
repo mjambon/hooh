@@ -11,7 +11,9 @@ Status: so far used for personal purposes only.
 Installation
 ------------
 
-Requires: OCaml, PCRE-OCaml, omake, git.
+Build-time dependencies: OCaml, ocamlfind, PCRE-OCaml, omake
+
+Run-time dependencies: git
 
 Compilation:
 ```
